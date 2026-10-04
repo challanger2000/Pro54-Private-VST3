@@ -1,0 +1,149 @@
+name: Build Pro54 VST3 Windows
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-2022
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout build kit
+        uses: actions/checkout@v4
+
+      - name: Checkout official Cmajor source
+        uses: actions/checkout@v4
+        with:
+          repository: cmajor-lang/cmajor
+          ref: 1.0.3175
+          path: cmajor
+
+      - name: Checkout JUCE
+        uses: actions/checkout@v4
+        with:
+          repository: juce-framework/JUCE
+          ref: master
+          path: JUCE
+
+      - name: Download official Cmajor Windows tools
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          $release = Invoke-RestMethod \
+            -Uri "https://api.github.com/repos/cmajor-lang/cmajor/releases/tags/1.0.3175" \
+            -Headers @{ "User-Agent" = "Pro54-VST3-Build" }
+
+          $assets = @($release.assets)
+          $asset = $assets | Where-Object {
+            $_.name -match '(?i)win|windows' -and $_.name -match '(?i)\.zip$'
+          } | Select-Object -First 1
+
+          if (-not $asset) {
+            Write-Host "Available release assets:"
+            $assets | ForEach-Object { Write-Host " - $($_.name)" }
+            throw "No Windows ZIP asset found in Cmajor 1.0.3175 release."
+          }
+
+          Write-Host "Using asset: $($asset.name)"
+          Invoke-WebRequest -Uri $asset.browser_download_url -OutFile "cmajor-tools.zip"
+          Expand-Archive -Path "cmajor-tools.zip" -DestinationPath "cmajor-tools" -Force
+
+          $cmaj = Get-ChildItem "cmajor-tools" -Recurse -Filter "cmaj.exe" |
+                  Select-Object -First 1
+
+          if (-not $cmaj) {
+            throw "cmaj.exe not found after extracting release."
+          }
+
+          "CMAJ_EXE=$($cmaj.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          & $cmaj.FullName version
+
+      - name: Export official Pro54 patch as JUCE VST3 project
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          $patch = Resolve-Path "cmajor\examples\patches\Pro54\Pro54.cmajorpatch"
+          $juce = Resolve-Path "JUCE"
+
+          & "$env:CMAJ_EXE" generate \
+            --target=juce \
+            --output="$PWD\generated" \
+            --jucePath="$juce" \
+            --juceFormats=VST3 \
+            "$patch"
+
+          if ($LASTEXITCODE -ne 0) {
+            throw "Cmajor JUCE export failed with exit code $LASTEXITCODE"
+          }
+
+          if (-not (Test-Path "generated\CMakeLists.txt")) {
+            throw "Generated CMakeLists.txt missing."
+          }
+
+      - name: Configure x64 Release
+        shell: pwsh
+        run: |
+          cmake -S generated -B build -A x64
+          if ($LASTEXITCODE -ne 0) {
+            throw "CMake configure failed with exit code $LASTEXITCODE"
+          }
+
+      - name: Build Pro54 VST3
+        shell: pwsh
+        run: |
+          cmake --build build --config Release --parallel
+          if ($LASTEXITCODE -ne 0) {
+            throw "Build failed with exit code $LASTEXITCODE"
+          }
+
+      - name: Locate and package VST3
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          $vst3 = Get-ChildItem "build" -Recurse -Directory -Filter "Pro54.vst3" |
+                  Select-Object -First 1
+
+          if (-not $vst3) {
+            Write-Host "VST3-like outputs:"
+            Get-ChildItem "build" -Recurse | Where-Object {
+              $_.FullName -match '(?i)\.vst3'
+            } | Select-Object -ExpandProperty FullName
+            throw "Pro54.vst3 bundle not found."
+          }
+
+          Write-Host "Found VST3: $($vst3.FullName)"
+          New-Item -ItemType Directory -Force -Path "artifact" | Out-Null
+          Copy-Item $vst3.FullName "artifact\Pro54.vst3" -Recurse -Force
+          Copy-Item "cmajor\LICENSE.md" "artifact\CMAJOR-LICENSE.md" -Force
+          Copy-Item "cmajor\examples\patches\Pro54\README.md" "artifact\PRO54-SOURCE-README.md" -Force
+
+          @"
+          Pro54 VST3 - private Windows x64 build
+
+          Source: https://github.com/cmajor-lang/cmajor
+          Patch: examples/patches/Pro54
+          Cmajor tag: 1.0.3175
+          Format: VST3
+          Architecture: x64
+          Build type: Release
+
+          Install the complete Pro54.vst3 folder to:
+          C:\Program Files\Common Files\VST3\
+          "@ | Set-Content "artifact\README-WINDOWS.txt" -Encoding UTF8
+
+      - name: Upload Pro54 VST3
+        uses: actions/upload-artifact@v4
+        with:
+          name: Pro54-VST3-Windows-x64
+          path: artifact
+          if-no-files-found: error
+          retention-days: 14
