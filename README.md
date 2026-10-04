@@ -1,17 +1,37 @@
-# Pro54 Private VST3
+# Pro54 VST3 Build Kit
 
-Private-use build wrapper for the official Cmajor Pro54 example.
+Dieses kleine Repository baut den **offiziellen Cmajor Pro54** als privaten
+**Windows x64 VST3**.
 
-This repository does not copy the Pro54 source. GitHub Actions checks out the official
-`cmajor-lang/cmajor` repository and exports `examples/patches/Pro54` to a Windows x64 VST3
-with Cmajor's official JUCE generator.
+Es enthält **keinen kopierten Pro54-Quellcode**. Die GitHub Action holt beim
+Build den offiziellen Cmajor-Quellstand und erzeugt daraus über den offiziellen
+Cmajor-JUCE-Exporter ein VST3.
 
-## Build
+## Ziel
 
-Open **Actions** → **Build Pro54 VST3 Windows** → **Run workflow**.
+- Windows x64
+- VST3
+- Release Build
+- originale Pro54-Patch-Struktur und GUI
+- keine Änderung am 125A PluginScaler
 
-After a successful run, download the artifact **Pro54-VST3-Windows-x64**.
+## Benutzung ohne Terminal
 
-Install the complete `Pro54.vst3` folder to:
+1. Neues privates GitHub-Repository anlegen.
+2. Den Inhalt dieses ZIPs in das Repository hochladen.
+3. GitHub Actions öffnen.
+4. `Build Pro54 VST3 Windows` ausführen.
+5. Nach erfolgreichem Lauf das Artifact `Pro54-VST3-Windows-x64` herunterladen.
+6. Den kompletten Ordner `Pro54.vst3` nach
+   `C:\Program Files\Common Files\VST3\` kopieren.
+7. Studio One neu scannen lassen.
 
-`C:\Program Files\Common Files\VST3\`
+Die Action läuft auch automatisch nach einem Push auf `main`.
+
+## Quellen
+
+- Cmajor: https://github.com/cmajor-lang/cmajor
+- Pro54: `examples/patches/Pro54`
+- JUCE: https://github.com/juce-framework/JUCE
+
+Cmajor/Pro54 bleiben unter den jeweiligen Lizenzbedingungen der Originalquellen.
