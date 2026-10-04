@@ -144,20 +144,41 @@ jobs:
         run: |
           $ErrorActionPreference = "Stop"
 
-          $vst3 = Get-ChildItem "build" -Recurse -Directory -Filter "Pro54.vst3" |
-                  Select-Object -First 1
+          $vst3Path = Join-Path $PWD "build\Pro54_artefacts\Release\VST3\Pro54.vst3"
 
-          if (-not $vst3) {
+          if (-not (Test-Path $vst3Path -PathType Container)) {
             Write-Host "VST3-like outputs:"
             Get-ChildItem "build" -Recurse | Where-Object {
               $_.FullName -match '(?i)\.vst3'
             } | Select-Object -ExpandProperty FullName
-            throw "Pro54.vst3 bundle not found."
+            throw "Release Pro54.vst3 bundle not found."
           }
 
-          Write-Host "Found VST3: $($vst3.FullName)"
+          $pluginBinary = Join-Path $vst3Path "Contents\x86_64-win\Pro54.vst3"
+          if (-not (Test-Path $pluginBinary -PathType Leaf)) {
+            throw "Release VST3 binary missing: $pluginBinary"
+          }
+
+          $binarySize = (Get-Item $pluginBinary).Length
+          if ($binarySize -lt 100000) {
+            throw "Release VST3 binary is unexpectedly small: $binarySize bytes"
+          }
+
+          Write-Host "Found Release VST3: $vst3Path"
+          Write-Host "Plugin binary: $pluginBinary"
+          Write-Host "Plugin binary size: $binarySize bytes"
+
           New-Item -ItemType Directory -Force -Path "artifact" | Out-Null
-          Copy-Item $vst3.FullName "artifact\Pro54.vst3" -Recurse -Force
+          Copy-Item $vst3Path "artifact\Pro54.vst3" -Recurse -Force
+
+          $copiedBinary = "artifact\Pro54.vst3\Contents\x86_64-win\Pro54.vst3"
+          if (-not (Test-Path $copiedBinary -PathType Leaf)) {
+            throw "Packaged VST3 binary missing after copy."
+          }
+
+          Write-Host "Packaged VST3 contents:"
+          Get-ChildItem "artifact\Pro54.vst3" -Recurse -File |
+            ForEach-Object { Write-Host "$($_.Length)  $($_.FullName)" }
           Copy-Item "cmajor\LICENSE.md" "artifact\CMAJOR-LICENSE.md" -Force
           Copy-Item "cmajor\examples\patches\Pro54\README.md" "artifact\PRO54-SOURCE-README.md" -Force
 
