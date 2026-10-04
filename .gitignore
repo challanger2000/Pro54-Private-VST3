@@ -1,0 +1,7 @@
+build/
+generated/
+cmajor/
+JUCE/
+cmajor-tools/
+cmajor-tools.zip
+artifact/
