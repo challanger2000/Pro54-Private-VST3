@@ -31,39 +31,72 @@ jobs:
           ref: master
           path: JUCE
 
-      - name: Download official Cmajor Windows tools
+      - name: Install official Cmajor Windows tools
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
 
-          $release = Invoke-RestMethod `
-            -Uri "https://api.github.com/repos/cmajor-lang/cmajor/releases/tags/1.0.3175" `
-            -Headers @{ "User-Agent" = "Pro54-VST3-Build" }
+          $exeUrl = "https://github.com/cmajor-lang/cmajor/releases/download/1.0.3175/cmajor_win_x64.exe"
+          $installer = "cmajor_win_x64.exe"
+          $installDir = Join-Path $env:GITHUB_WORKSPACE "tools\cmajor"
 
-          $assets = @($release.assets)
-          $asset = $assets | Where-Object {
-            $_.name -match '(?i)win|windows' -and $_.name -match '(?i)\.zip$'
-          } | Select-Object -First 1
+          New-Item -ItemType Directory -Force -Path $installDir | Out-Null
+          Invoke-WebRequest -Uri $exeUrl -OutFile $installer
 
-          if (-not $asset) {
-            Write-Host "Available release assets:"
-            $assets | ForEach-Object { Write-Host " - $($_.name)" }
-            throw "No Windows ZIP asset found in Cmajor 1.0.3175 release."
+          $downloaded = Get-Item $installer
+          if ($downloaded.Length -lt 1000000) {
+            throw "Downloaded Cmajor installer is unexpectedly small."
           }
 
-          Write-Host "Using asset: $($asset.name)"
-          Invoke-WebRequest -Uri $asset.browser_download_url -OutFile "cmajor-tools.zip"
-          Expand-Archive -Path "cmajor-tools.zip" -DestinationPath "cmajor-tools" -Force
+          $arguments = @(
+            "/VERYSILENT",
+            "/SUPPRESSMSGBOXES",
+            "/NORESTART",
+            "/SP-",
+            "/DIR=`"$installDir`""
+          )
 
-          $cmaj = Get-ChildItem "cmajor-tools" -Recurse -Filter "cmaj.exe" |
-                  Select-Object -First 1
+          $process = Start-Process `
+            -FilePath ".\$installer" `
+            -ArgumentList $arguments `
+            -Wait `
+            -PassThru
+
+          if ($process.ExitCode -ne 0) {
+            Write-Warning "Installer exit code $($process.ExitCode); searching for cmaj.exe anyway."
+          }
+
+          Start-Sleep -Seconds 2
+
+          $searchRoots = @(
+            $installDir,
+            "$env:GITHUB_WORKSPACE\tools",
+            "$env:LOCALAPPDATA\Programs",
+            "$env:ProgramFiles",
+            "${env:ProgramFiles(x86)}"
+          ) | Where-Object { $_ -and (Test-Path $_) }
+
+          $cmaj = $null
+          foreach ($root in $searchRoots) {
+            $found = Get-ChildItem -Path $root -Recurse -Filter "cmaj.exe" -ErrorAction SilentlyContinue |
+                     Select-Object -First 1
+            if ($found) {
+              $cmaj = $found
+              break
+            }
+          }
 
           if (-not $cmaj) {
-            throw "cmaj.exe not found after extracting release."
+            throw "Could not find cmaj.exe after Cmajor installation."
           }
 
           "CMAJ_EXE=$($cmaj.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
-          & $cmaj.FullName version
+          "CMAJ_DIR=$($cmaj.DirectoryName)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+          & $cmaj.FullName help
+          if ($LASTEXITCODE -ne 0) {
+            throw "cmaj help failed with exit code $LASTEXITCODE"
+          }
 
       - name: Export official Pro54 patch as JUCE VST3 project
         shell: pwsh
@@ -73,10 +106,12 @@ jobs:
           $patch = Resolve-Path "cmajor\examples\patches\Pro54\Pro54.cmajorpatch"
           $juce = Resolve-Path "JUCE"
 
+          $env:PATH = "$env:CMAJ_DIR;" + $env:PATH
+
           & "$env:CMAJ_EXE" generate `
             --target=juce `
-            --output="$PWD\generated" `
-            --jucePath="$juce" `
+            --output=generated `
+            "--jucePath=$juce" `
             --juceFormats=VST3 `
             "$patch"
 
