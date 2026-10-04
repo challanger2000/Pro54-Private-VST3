@@ -36,8 +36,8 @@ jobs:
         run: |
           $ErrorActionPreference = "Stop"
 
-          $release = Invoke-RestMethod \
-            -Uri "https://api.github.com/repos/cmajor-lang/cmajor/releases/tags/1.0.3175" \
+          $release = Invoke-RestMethod `
+            -Uri "https://api.github.com/repos/cmajor-lang/cmajor/releases/tags/1.0.3175" `
             -Headers @{ "User-Agent" = "Pro54-VST3-Build" }
 
           $assets = @($release.assets)
@@ -73,11 +73,11 @@ jobs:
           $patch = Resolve-Path "cmajor\examples\patches\Pro54\Pro54.cmajorpatch"
           $juce = Resolve-Path "JUCE"
 
-          & "$env:CMAJ_EXE" generate \
-            --target=juce \
-            --output="$PWD\generated" \
-            --jucePath="$juce" \
-            --juceFormats=VST3 \
+          & "$env:CMAJ_EXE" generate `
+            --target=juce `
+            --output="$PWD\generated" `
+            --jucePath="$juce" `
+            --juceFormats=VST3 `
             "$patch"
 
           if ($LASTEXITCODE -ne 0) {
